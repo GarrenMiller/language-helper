@@ -1,4 +1,5 @@
 mod server;
+mod handlers;
 
 use server::start_server;
 

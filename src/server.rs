@@ -5,14 +5,17 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-pub async fn start_server() {
-    // tracing_subscriber::fmt::init();
+use crate::handlers;
 
+
+pub async fn start_server() {
     let app = Router::new()
-        .route("/", get(root));
+        .route("/", get(root))
+        .route("/verb_harmony/{verb}", get(handlers::vowel_harmony::classify));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await;
+
 }
 
 async fn root() -> &'static str {
