@@ -23,45 +23,114 @@ File extension: `.hfstol`
 The file is a flat binary stream with four sequential sections:
 
 ```
-┌──────────────────────────────────────┐
-│ 1. Header  (≈66 bytes, fixed-size)   │
-├──────────────────────────────────────┤
-│ 2. Alphabet (null-terminated UTF-8)  │  variable
-├──────────────────────────────────────┤
-│ 3. Transition Index Table            │  6 × index_table_entries bytes
-├──────────────────────────────────────┤
-│ 4. Transition Table                  │  8 × transition_table_entries bytes
-└──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Header  (variable; 56-byte fixed portion after properties)│
+├─────────────────────────────────────────────────────────────┤
+│ 2. Alphabet (null-terminated UTF-8)                         │  variable
+├─────────────────────────────────────────────────────────────┤
+│ 3. Transition Index Table  6 × index_table_entries bytes    │
+├─────────────────────────────────────────────────────────────┤
+│ 4. Transition Table        8 × transition_table_entries bytes│
+└─────────────────────────────────────────────────────────────┘
 ```
 
 All multi-byte integers are **little-endian** and written via raw `write()` of
-C/C++ types. The file has no magic bytes; a reader must rely on the fact that
-the header contains a consistent transducer to validate the stream.
+C/C++ types.
 
 ---
 
 ## 2. Header
 
-The header is a flat sequence of C types with no padding. Read each field in
-order.
+There are **two header variants** depending on the HFSTOL version that
+produced the file. A reader should detect which variant is present.
 
-| Offset | Type             | Size | Field                                |
-|--------|------------------|------|--------------------------------------|
-| 0      | `uint16`         | 2    | `number_of_input_symbols`            |
-| 2      | `uint16`         | 2    | `number_of_symbols` (total alphabet) |
-| 4      | `uint32`         | 4    | `size_of_transition_index_table`     |
-| 8      | `uint32`         | 4    | `size_of_transition_target_table`    |
-| 12     | `uint32`         | 4    | `number_of_states` (informational)   |
-| 16     | `uint32`         | 4    | `number_of_transitions` (info)       |
-| 20     | `uint32` (0\|1)  | 4    | `weighted`                           |
-| 24     | `uint32` (0\|1)  | 4    | `deterministic`                      |
-| 28     | `uint32` (0\|1)  | 4    | `input_deterministic`                |
-| 32     | `uint32` (0\|1)  | 4    | `minimized`                          |
-| 36     | `uint32` (0\|1)  | 4    | `cyclic`                             |
-| 40     | `uint32` (0\|1)  | 4    | `has_epsilon_epsilon_transitions`    |
-| 44     | `uint32` (0\|1)  | 4    | `has_input_epsilon_transitions`      |
-| 48     | `uint32` (0\|1)  | 4    | `has_input_epsilon_cycles`           |
-| 52     | `uint32` (0\|1)  | 4    | `has_unweighted_input_epsilon_cycles`|
+### 2.1 Variant detection
+
+Read the first 4 bytes of the file:
+
+- If they are `48 46 53 54` (ASCII `HFST`): **property-based header** (§2.2).
+- Otherwise: **flat fixed-size header** (§2.3).
+
+The flat variant was produced by older versions of HFST. The property-based
+variant is produced by HFST 3.x+ and the `hfst-ospell` library.
+
+### 2.2 Property-based header (HFST 3.x+)
+
+The file begins with a 4-byte `HFST` magic, followed by a variable-length
+**property section** that stores metadata as key-value pairs. The 56-byte
+fixed header (§2.4) comes **after** the property section ends.
+
+#### Property encoding
+
+After the 4-byte magic, properties are concatenated. Each property is:
+
+```
+u16 name_len   (length of property name, in bytes)
+... name       (name_len bytes, NOT null-terminated)
+u16 value_len  (length of property value, in bytes)
+... value      (value_len bytes, NOT null-terminated)
+```
+
+A property with `name_len == 0` signals the **end** of the property section.
+The fixed header begins immediately after this sentinel.
+
+#### Example (from `dog.hfstol`)
+
+```
+48 46 53 54   HFST magic
+00 68         name_len=104 (varies)
+...           104 bytes of name data
+00 00         value_len=0 (empty value, sentinel-like)
+<56-byte fixed header starts here>
+```
+
+In practice, property names and values are null-terminated strings (the name
+and value lengths include the null terminator), but **some implementations
+omit null terminators** — always use the length fields for boundaries.
+
+Typical properties: `version`, `type`, `formulaic-definition`, `name`.
+
+#### Parsing pseudocode
+
+```
+read 4 bytes magic  // should be "HFST"
+loop:
+    name_len  = read_u16le()
+    if name_len == 0: break  // end of properties
+    name      = read_bytes(name_len)
+    value_len = read_u16le()
+    value     = read_bytes(value_len)
+    store(name, value)
+// Fixed header follows at current position
+```
+
+### 2.3 Flat fixed-size header (legacy)
+
+In the legacy format the file has **no magic bytes** and the 56-byte header
+begins at offset 0. The fixed fields are identical to §2.4 below.
+
+### 2.4 Fixed header fields
+
+Whether reached directly (legacy) or after the property section (HFST 3.x+),
+the fixed portion is the same flat 56-byte sequence of C types with no padding:
+
+| Relative offset | Type             | Size | Field                                |
+|-----------------|------------------|------|--------------------------------------|
+| 0               | `uint16`         | 2    | `number_of_input_symbols`            |
+| 2               | `uint16`         | 2    | `number_of_symbols` (total alphabet) |
+| 4               | `uint32`         | 4    | `size_of_transition_index_table`     |
+| 8               | `uint32`         | 4    | `size_of_transition_target_table`    |
+| 12              | `uint32`         | 4    | `number_of_states` (informational)   |
+| 16              | `uint32`         | 4    | `number_of_transitions` (info)       |
+| 20              | `uint32` (0\|1)  | 4    | `weighted`                           |
+| 24              | `uint32` (0\|1)  | 4    | `deterministic`                      |
+| 28              | `uint32` (0\|1)  | 4    | `input_deterministic`                |
+| 32              | `uint32` (0\|1)  | 4    | `minimized`                          |
+| 36              | `uint32` (0\|1)  | 4    | `cyclic`                             |
+| 40              | `uint32` (0\|1)  | 4    | `has_epsilon_epsilon_transitions`    |
+| 44              | `uint32` (0\|1)  | 4    | `has_input_epsilon_transitions`      |
+| 48              | `uint32` (0\|1)  | 4    | `has_input_epsilon_cycles`           |
+| 52              | `uint32` (0\|1)  | 4    | `has_unweighted_input_epsilon_cycles`|
 
 **Total: 56 bytes**
 
@@ -347,10 +416,10 @@ dog+VERB+PRES
 dog+VERB+PAST
 ```
 
-### Binary layout (hex dump, unweighted):
+### Binary layout (hex dump, unweighted, legacy flat-header format):
 
 ```
-Header:
+Header (no magic — starts at offset 0):
 0005 ......... 5 input symbols
 000a ......... 10 symbols total
 000c 0000 .... 12 index table entries
@@ -414,10 +483,14 @@ Key observations:
 
 To implement a lookup tool from scratch:
 
-1. **Read the header** — validate that fields are consistent (e.g.,
+1. **Detect the header variant** — read the first 4 bytes. If `HFST`, skip
+   the magic and parse the property section (§2.2) before reading the fixed
+   header. Otherwise, read the fixed header from offset 0 (§2.3).
+
+2. **Read the header** — validate that fields are consistent (e.g.,
    `input_symbols ≤ symbols`, table sizes are positive).
 
-2. **Read the alphabet** — build `symbol_table[0..N]` of UTF-8 strings.
+3. **Read the alphabet** — build `symbol_table[0..N]` of UTF-8 strings.
    Identify flag diacritics and special symbols (`@_UNKNOWN_...`, etc.).
 
 3. **Read the two tables** — deserialize the index and transition arrays into

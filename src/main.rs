@@ -1,5 +1,6 @@
 mod server;
 mod handlers;
+mod morphology;
 
 use server::start_server;
 
