@@ -46,9 +46,10 @@ produced the file. A reader should detect which variant is present.
 
 ### 2.1 Variant detection
 
-Read the first 4 bytes of the file:
+Read the first 5 bytes of the file:
 
-- If they are `48 46 53 54` (ASCII `HFST`): **property-based header** (§2.2).
+- If they are `48 46 53 54 00` (ASCII `HFST` plus a NUL): **property-based
+  header** (§2.2).
 - Otherwise: **flat fixed-size header** (§2.3).
 
 The flat variant was produced by older versions of HFST. The property-based
@@ -56,50 +57,78 @@ variant is produced by HFST 3.x+ and the `hfst-ospell` library.
 
 ### 2.2 Property-based header (HFST 3.x+)
 
-The file begins with a 4-byte `HFST` magic, followed by a variable-length
-**property section** that stores metadata as key-value pairs. The 56-byte
-fixed header (§2.4) comes **after** the property section ends.
+The file begins with a 5-byte `HFST\0` magic (the ASCII letters `HFST`
+followed by a NUL terminator), followed by a variable-length **property
+section** that stores metadata as key-value pairs. The 56-byte fixed header
+(§2.4) comes **after** the property section ends.
 
 #### Property encoding
 
-After the 4-byte magic, properties are concatenated. Each property is:
+After the magic, the property section is laid out as:
 
 ```
-u16 name_len   (length of property name, in bytes)
-... name       (name_len bytes, NOT null-terminated)
-u16 value_len  (length of property value, in bytes)
-... value      (value_len bytes, NOT null-terminated)
+uint8  magic[5]    "HFST" plus a NUL terminator
+uint16 body_len    total length of the property body, in bytes (little-endian)
+uint8  separator   always NUL
+...    body        body_len bytes
 ```
 
-A property with `name_len == 0` signals the **end** of the property section.
-The fixed header begins immediately after this sentinel.
+The body is a single flat blob of concatenated NUL-terminated strings. The
+strings are stored as alternating name/value pairs: each property's name
+string is immediately followed by its value string, and both are terminated
+by NUL.
+
+```
+name1\0value1\0name2\0value2\0 ... nameN\0valueN\0
+```
+
+The NUL that terminates the last value string is also the final byte of the
+body (the byte at `body[body_len - 1]` is always NUL). There is **no
+per-property length field**, no count of properties, and no end-of-properties
+sentinel; the fixed header begins immediately after the body.
+
+Typical properties: `version`, `type`, `formulaic-definition`, `name`. The
+`type` value indicates the transducer flavour: `HFST_OL` for unweighted
+optimized-lookup transducers or `HFST_OLW` for weighted ones.
 
 #### Example (from `dog.hfstol`)
 
 ```
-48 46 53 54   HFST magic
-00 68         name_len=104 (varies)
-...           104 bytes of name data
-00 00         value_len=0 (empty value, sentinel-like)
+48 46 53 54 00   "HFST\0" magic
+68 00            body_len = 104 (little-endian)
+00               separator
+76 65 72 73 69 6f 6e 00        "version"
+33 2e 33 00                    "3.3"
+74 79 70 65 00                 "type"
+48 46 53 54 5f 4f 4c 00        "HFST_OL"
+66 6f 72 6d 75 6c 61 69 63 2d 64 65 66 69 6e 69 74 69 6f 6e 00  "formulaic-definition"
+54 20 2f 00                    "T /"
+6e 61 6d 65 00                 "name"
+74 65 78 74 28 2f 68 6f 6d 65 2f 67 61 72 72 65 6e 2f 50 72 6f 6a 65 63 74 73 2f 65 6d 4d 6f 72 70 68 2f 68 66 73 74 2f 64 6f 67 2e 61 74 74 29 00  "text(/home/garren/Projects/emMorph/hfst/dog.att)"
 <56-byte fixed header starts here>
 ```
 
-In practice, property names and values are null-terminated strings (the name
-and value lengths include the null terminator), but **some implementations
-omit null terminators** — always use the length fields for boundaries.
+Properties parsed from the body:
 
-Typical properties: `version`, `type`, `formulaic-definition`, `name`.
+| name | value |
+|------|-------|
+| `version` | `3.3` |
+| `type` | `HFST_OL` |
+| `formulaic-definition` | `T /` |
+| `name` | `text(/home/garren/Projects/emMorph/hfst/dog.att)` |
 
 #### Parsing pseudocode
 
 ```
-read 4 bytes magic  // should be "HFST"
-loop:
-    name_len  = read_u16le()
-    if name_len == 0: break  // end of properties
-    name      = read_bytes(name_len)
-    value_len = read_u16le()
-    value     = read_bytes(value_len)
+read 5 bytes magic           // must be "HFST\0"
+body_len = read_u16le()
+read 1 byte separator        // must be NUL
+body     = read_bytes(body_len)
+assert body[body_len - 1] == 0
+
+// Split body on NUL bytes, taking the strings two at a time as
+// (name, value) pairs.
+for each pair (name, value) in split_on_nul(body):
     store(name, value)
 // Fixed header follows at current position
 ```
@@ -483,9 +512,10 @@ Key observations:
 
 To implement a lookup tool from scratch:
 
-1. **Detect the header variant** — read the first 4 bytes. If `HFST`, skip
-   the magic and parse the property section (§2.2) before reading the fixed
-   header. Otherwise, read the fixed header from offset 0 (§2.3).
+1. **Detect the header variant** — read the first 5 bytes. If they are
+   `HFST\0`, skip the magic, body length, separator, and property body
+   (§2.2) before reading the fixed header. Otherwise, read the fixed header
+   from offset 0 (§2.3).
 
 2. **Read the header** — validate that fields are consistent (e.g.,
    `input_symbols ≤ symbols`, table sizes are positive).
