@@ -46,7 +46,7 @@ struct HfstPropertyHeader {
 }
 
 pub fn read_header() -> io::Result<()> {
-    let file = File::open("hu.hfstol")?;
+    let file = File::open("test_sample.hfstol")?;
     let mut reader = BufReader::new(file);
     let mut magic = [0u8; 5];
     reader.read_exact(&mut magic)?;
