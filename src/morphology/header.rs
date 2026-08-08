@@ -1,8 +1,9 @@
 use std::fs::File;
-use std::io::{self, Read, Seek, BufReader};
+use std::io::{self, Read, Seek, BufReader, BufRead};
+use std::error::Error;
 
 #[derive(Debug)]
-struct HeaderProperty {
+struct HfstMetadata {
     name: String,
     value: String,
 }
@@ -15,7 +16,7 @@ pub fn read_header() -> io::Result<()> {
 
     println!("Modern HFST format: {}", is_modern_hfst(&magic));
 
-    let header_property = decode_properties_section(reader);
+    let header_property = decode_hfst_metadata_header(reader);
 
     println!("Header property name: {:?}", header_property);
     Ok(())
@@ -25,23 +26,29 @@ fn is_modern_hfst(bytes: &[u8]) -> bool {
     bytes.len() >= 5 && &bytes[0..5] == b"HFST\0"
 }
 
-fn decode_properties_section<R: Read + Seek>(mut reader: BufReader<R>) {
-    let mut length_bytes = [0u8; 2]; 
-    let _ = reader.read(&mut length_bytes);
-    let length = u16::from_le_bytes(length_bytes); 
-    println!("property section length: {}", length);
-    let _ = reader.seek_relative(1).unwrap();
-    let mut properties = vec![0u8; length.into()];
-    let _ = reader.read_exact(&mut properties);
-    let result = String::from_utf8(properties);
-    match result {
-        Ok(result) => {
-            let pairs = result.split('\0').collect::<Vec<&str>>();
-            for pair in pairs.chunks(2) {
-                println!("{:?}", pair)
-            }
-        },
-        Err(e) => println!("Something went wrong: {:?}", e),
+fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<HfstMetadata>, Box<dyn Error>> {
+    let buffer = reader.fill_buf()?;
+    if buffer.is_empty() {
+        eprintln!("The file buffer was empty when decoding properties");
     }
 
+    let length = u16::from_le_bytes([buffer[0], buffer[1]]);
+    let offset = length + 3; // Skip null byte separator
+    
+    let properties = &buffer[3..offset as usize]; 
+    let props_str = str::from_utf8(properties);
+    let split = props_str?.split('\0').collect::<Vec<&str>>(); // Remove separators
+
+    let result = split 
+        .chunks(2)
+        .filter_map(|pair| match pair {
+            [name, value] => Some(HfstMetadata { 
+                name: name.to_string(),
+                value: value.to_string() 
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    reader.consume(offset as usize);
+    return Ok(result);
 } 
