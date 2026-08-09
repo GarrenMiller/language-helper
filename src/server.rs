@@ -5,7 +5,7 @@ use axum::{
 };
 
 use crate::handlers;
-use crate::morphology;
+use crate::hfstol;
 
 // Macro to allow any function on a route handler for debugging
 macro_rules! debug_handler {
@@ -23,7 +23,7 @@ macro_rules! debug_handler {
 pub async fn start_server() {
     let app = Router::new()
         .route("/", get(root))
-        .route("/fst", get(debug_handler!(morphology::header::read_header())))
+        .route("/fst", get(debug_handler!(hfstol::header::read_header())))
         .route("/verb_harmony/{verb}", get(handlers::vowel_harmony::classify));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
