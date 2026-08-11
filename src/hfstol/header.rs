@@ -42,16 +42,13 @@ fn is_modern_hfst(bytes: &[u8]) -> bool {
 }
 
 fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<HfstMetadata>, Box<dyn Error>> {
-
-    reader.seek(SeekFrom::Current(3))?; // We don't need length, just read until null byte pair
-   
     let (index, props_str) = {
         let buffer = reader.fill_buf()?;
         if buffer.is_empty() {
             eprintln!("The file buffer was empty when decoding properties");
         }
-        let index = buffer.windows(2).position(|w| w == b"\0\0").unwrap();
-        let properties = &buffer[..index + 2];
+        let index = u16::from_le_bytes([buffer[0], buffer[1]]);
+        let properties = &buffer[3..index as usize];
         (index, str::from_utf8(properties))
     };
 
@@ -67,7 +64,7 @@ fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<Hf
             _ => None,
         })
         .collect::<Vec<_>>();
-    reader.consume(index + 2 as usize);
+    reader.consume(index as usize + 3);
     return Ok(result);
 } 
 
