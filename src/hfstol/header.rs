@@ -1,16 +1,16 @@
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, BufReader, BufRead};
+use std::io::{Read, Seek, BufReader, BufRead};
 use std::error::Error;
 use deku::prelude::*;
 
 #[derive(Debug)]
-struct HfstMetadata {
+pub struct HfstolMetadata {
     name: String,
     value: String,
 }
 
 #[derive(Debug, DekuRead, DekuWrite)]
-struct HfstPropertyHeader {
+pub struct HfstolProperties {
     num_input_symbols: u16,
     num_symbols: u16,
     transition_index_size: u32,
@@ -22,30 +22,32 @@ struct HfstPropertyHeader {
     property_mask: u32
 }
 
-pub fn read_header() -> io::Result<()> {
+pub fn read_hfstol_header() -> Result<(Vec<HfstolMetadata>, HfstolProperties), Box<dyn Error>> {
     let file = File::open("hu.hfstol")?;
     let mut reader = BufReader::new(file);
     let mut magic = [0u8; 5];
     reader.read_exact(&mut magic)?;
 
-    println!("Modern HFST format: {}", is_modern_hfst(&magic));
+    let is_modern = is_modern_hfstol(&magic);
 
-    let header_property = decode_hfst_metadata_header(&mut reader);
-    println!("Metadata: {:?}", header_property);
-    let hfst_header = decode_hfst_property_header(reader);
-    println!("Header Props: {:?}", hfst_header);
-    Ok(())
+    if !is_modern {
+        return Err("Could not parse the HFST-OL file with modern standard; it's probably not supported.".into());
+    }
+
+    let header_property = decode_hfstol_metadata(&mut reader)?;
+    let hfst_header = decode_hfstol_properties(reader)?;
+    Ok((header_property, hfst_header))
 }
 
-fn is_modern_hfst(bytes: &[u8]) -> bool {
+fn is_modern_hfstol(bytes: &[u8]) -> bool {
     bytes.len() >= 5 && &bytes[0..5] == b"HFST\0"
 }
 
-fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<HfstMetadata>, Box<dyn Error>> {
+fn decode_hfstol_metadata(mut reader: impl BufRead + Seek) -> Result<Vec<HfstolMetadata>, Box<dyn Error>> {
     let (index, props_str) = {
         let buffer = reader.fill_buf()?;
         if buffer.is_empty() {
-            eprintln!("The file buffer was empty when decoding properties");
+            return Err("The file buffer was empty when decoding metadata; is the file correct?".into())
         }
         let index = u16::from_le_bytes([buffer[0], buffer[1]]);
         let properties = &buffer[3..index as usize];
@@ -57,7 +59,7 @@ fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<Hf
     let result = split 
         .chunks(2)
         .filter_map(|pair| match pair {
-            [name, value] => Some(HfstMetadata { 
+            [name, value] => Some(HfstolMetadata { 
                 name: name.to_string(),
                 value: value.to_string() 
             }),
@@ -68,8 +70,8 @@ fn decode_hfst_metadata_header(mut reader: impl BufRead + Seek) -> Result<Vec<Hf
     return Ok(result);
 } 
 
-fn decode_hfst_property_header(mut reader: impl BufRead + Seek) -> Result<HfstPropertyHeader, Box<dyn Error>> {
+fn decode_hfstol_properties(mut reader: impl BufRead + Seek) -> Result<HfstolProperties, Box<dyn Error>> {
     let buffer = reader.fill_buf()?;
-    let ((remaining_bytes, bit_offset), result) = HfstPropertyHeader::from_bytes((&buffer[..32], 0)).unwrap();
+    let (_, result) = HfstolProperties::from_bytes((&buffer[..32], 0)).unwrap();
     return Ok(result);
 }
