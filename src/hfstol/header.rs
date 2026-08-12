@@ -31,7 +31,7 @@ pub fn read_hfstol_header() -> Result<(Vec<HfstolMetadata>, HfstolProperties), B
     let is_modern = is_modern_hfstol(&magic);
 
     if !is_modern {
-        return Err("Could not parse the HFST-OL file with modern standard; it's probably not supported.".into());
+        return Err("Could not parse the HFST-OL file as version 3.1+; it's probably an older version that's not supported.".into());
     }
 
     let header_property = decode_hfstol_metadata(&mut reader)?;
