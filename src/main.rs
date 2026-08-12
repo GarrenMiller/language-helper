@@ -1,6 +1,6 @@
 mod server;
 mod handlers;
-mod morphology;
+mod hfstol;
 
 use server::start_server;
 
