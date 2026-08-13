@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Read, Seek, BufReader, BufRead};
+use std::io::{Read, BufReader, BufRead};
 use std::error::Error;
 use deku::prelude::*;
 
@@ -11,7 +11,7 @@ pub struct HfstolMetadata {
 
 #[derive(Debug, DekuRead, DekuWrite)]
 pub struct HfstolProperties {
-    num_input_symbols: u16,
+    pub num_input_symbols: u16,
     num_symbols: u16,
     transition_index_size: u32,
     transition_table_size: u32,
@@ -22,9 +22,7 @@ pub struct HfstolProperties {
     property_mask: u32
 }
 
-pub fn read_hfstol_header() -> Result<(Vec<HfstolMetadata>, HfstolProperties), Box<dyn Error>> {
-    let file = File::open("hu.hfstol")?;
-    let mut reader = BufReader::new(file);
+pub fn read_hfstol_header(reader: &mut BufReader<File>) -> Result<(Vec<HfstolMetadata>, HfstolProperties), Box<dyn Error>> {
     let mut magic = [0u8; 5];
     reader.read_exact(&mut magic)?;
 
@@ -34,7 +32,7 @@ pub fn read_hfstol_header() -> Result<(Vec<HfstolMetadata>, HfstolProperties), B
         return Err("Could not parse the HFST-OL file as version 3.1+; it's probably an older version that's not supported.".into());
     }
 
-    let header_property = decode_hfstol_metadata(&mut reader)?;
+    let header_property = decode_hfstol_metadata(reader)?;
     let hfst_header = decode_hfstol_properties(reader)?;
     Ok((header_property, hfst_header))
 }
@@ -43,7 +41,7 @@ fn is_modern_hfstol(bytes: &[u8]) -> bool {
     bytes.len() >= 5 && &bytes[0..5] == b"HFST\0"
 }
 
-fn decode_hfstol_metadata(mut reader: impl BufRead + Seek) -> Result<Vec<HfstolMetadata>, Box<dyn Error>> {
+fn decode_hfstol_metadata(reader: &mut BufReader<File>) -> Result<Vec<HfstolMetadata>, Box<dyn Error>> {
     let (index, props_str) = {
         let buffer = reader.fill_buf()?;
         if buffer.is_empty() {
@@ -70,8 +68,9 @@ fn decode_hfstol_metadata(mut reader: impl BufRead + Seek) -> Result<Vec<HfstolM
     return Ok(result);
 } 
 
-fn decode_hfstol_properties(mut reader: impl BufRead + Seek) -> Result<HfstolProperties, Box<dyn Error>> {
+fn decode_hfstol_properties(reader: &mut BufReader<File>) -> Result<HfstolProperties, Box<dyn Error>> {
     let buffer = reader.fill_buf()?;
     let (_, result) = HfstolProperties::from_bytes((&buffer[..32], 0)).unwrap();
+    reader.consume(32);
     return Ok(result);
 }
