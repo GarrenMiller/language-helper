@@ -16,10 +16,10 @@ pub fn get_alphabet(mut reader: impl BufRead + Seek, hfstol_properties: HfstolPr
         .unwrap();
 
     let alphabet_string = String::from_utf8(buffer[..index as usize].to_vec()).unwrap();
-    let split_alphabet = alphabet_string
+    let mut split_alphabet = alphabet_string
         .split("\0")
-        .collect::<Vec<&str>>()
-        .retain(|&s| !s.is_empty() && !s.contains("@"));
+        .collect::<Vec<&str>>();
+    split_alphabet.retain(|&s| !s.is_empty() && !s.contains("@"));
 
     println!("Alphabet string: {:?}", split_alphabet);
 
