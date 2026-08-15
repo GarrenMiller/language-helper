@@ -12,7 +12,7 @@ pub struct HfstolMetadata {
 #[derive(Debug, DekuRead, DekuWrite)]
 pub struct HfstolProperties {
     pub num_input_symbols: u16,
-    num_symbols: u16,
+    pub num_symbols: u16,
     transition_index_size: u32,
     transition_table_size: u32,
     num_states: u32,

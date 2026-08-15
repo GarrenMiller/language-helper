@@ -2,26 +2,38 @@ use std::io::{BufRead, Seek};
 use std::error::Error;
 use crate::hfstol::header::HfstolProperties;
 
-pub fn get_alphabet(mut reader: impl BufRead + Seek, hfstol_properties: HfstolProperties) -> Result<(), Box<dyn Error>> {
+pub fn parse_symbols(mut reader: impl BufRead + Seek, hfstol_properties: HfstolProperties) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Box<dyn Error>> {
     let mut _count = 0;
-    // let mut alphabet = Vec::new();
+    let mut alphabet: Vec<Vec<u8>> = Vec::new();
+    let mut special_symbols: Vec<Vec<u8>> = Vec::new();
 
-    let buffer = reader.fill_buf()?;
+    // First '@' byte
+    {
+        let buffer = reader.fill_buf()?;
+        let start = buffer.iter().position(|&b| b == b'@').unwrap();
+        reader.consume(start);
+    }
 
-    let index = buffer.iter()
-        .enumerate()
-        .filter(|&(_, &b)| b == 0x00)
-        .map(|(idx, _)| idx)
-        .nth(hfstol_properties.num_input_symbols as usize)
-        .unwrap();
+    loop {
+        if _count == hfstol_properties.num_symbols {
+            println!("Finished parsing symbols");
+            break;
+        }
+        let buffer = reader.fill_buf()?;
+        let null_byte = buffer.iter().position(|&b| b == 0).unwrap();
 
-    let alphabet_string = String::from_utf8(buffer[..index as usize].to_vec()).unwrap();
-    let mut split_alphabet = alphabet_string
-        .split("\0")
-        .collect::<Vec<&str>>();
-    split_alphabet.retain(|&s| !s.is_empty() && !s.contains("@"));
+        let symbol = buffer[..null_byte].to_vec();
 
-    println!("Alphabet string: {:?}", split_alphabet);
+        if symbol[0] == b'@' || symbol[0] == b'^' {
+            special_symbols.push(symbol);
+        }
+        else {
+            alphabet.push(buffer[..null_byte].to_vec());
+        }
 
-    Ok(())
+        reader.consume(null_byte + 1);
+        _count += 1;
+    }
+
+    Ok((alphabet, special_symbols))
 }

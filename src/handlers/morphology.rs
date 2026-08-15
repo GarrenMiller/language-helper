@@ -11,6 +11,7 @@ pub async fn load_analyzer_binary() {
     let mut reader = BufReader::new(file);
     let hfstol_header = header::read_hfstol_header(&mut reader).unwrap();
     println!("Header: {:?}", hfstol_header.1);
-    let alphabet = tokenizer::get_alphabet(reader, hfstol_header.1);
-    println!("Alphabet: {:?}", alphabet);
+    let symbols = tokenizer::parse_symbols(reader, hfstol_header.1).unwrap();
+    println!("Alphabet: {:?}", symbols.0);
+    println!("Special symbosl: {:?}", symbols.1);
 }
