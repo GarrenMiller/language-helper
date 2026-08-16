@@ -1,24 +1,51 @@
-use std::io::{BufRead, BufReader, Seek};
+use std::io::{BufRead, BufReader};
 use std::fs::File;
 use std::error::Error;
+use std::fmt;
 use crate::hfstol::header::HfstolProperties;
 
+
 pub struct Tokenizer {
-    alphabet: Vec<Vec<u8>>,
-    special_symbols: Vec<Vec<u8>>,
+    pub alphabet: Vec<Vec<u8>>,
+    pub special_symbols: Vec<Vec<u8>>,
 }
 
 impl Tokenizer {
     pub fn new(reader: BufReader<File> , hfstol_properties: HfstolProperties) -> Result<Tokenizer, Box<dyn Error>> {
         let (alphabet, special_symbols) = parse_symbols(reader, hfstol_properties)?;
-        Ok(Self {
-            alphabet,
-            special_symbols
-        })
+        Ok(
+            Self {
+                alphabet,
+                special_symbols
+            }
+        )
     }
 }
 
-pub fn parse_symbols(mut reader: impl BufRead + Seek, hfstol_properties: HfstolProperties) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Box<dyn Error>> {
+impl fmt::Display for Tokenizer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let alphabet = self
+            .alphabet
+            .iter()
+            .map(|v| str::from_utf8(&v).expect("Could not convert alphabet symbol to string from  UTF-8 bytes"))
+            .collect::<Vec<&str>>();
+
+        let symbols = self
+            .special_symbols
+            .iter()
+            .map(|v| str::from_utf8(&v).expect("Could not convert special symbol to string from UTF-8 bytes"))
+            .collect::<Vec<&str>>();
+
+        write!(
+            f,
+            "Alphabet: {:?}, special_symbols: {:?}",
+            alphabet,
+            symbols,
+        )
+    }
+}
+
+pub fn parse_symbols(mut reader: BufReader<File>, hfstol_properties: HfstolProperties) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Box<dyn Error>> {
     let mut _count = 0;
     let mut alphabet: Vec<Vec<u8>> = Vec::new();
     let mut special_symbols: Vec<Vec<u8>> = Vec::new();
@@ -52,4 +79,10 @@ pub fn parse_symbols(mut reader: impl BufRead + Seek, hfstol_properties: HfstolP
     }
 
     Ok((alphabet, special_symbols))
+}
+
+pub fn parse_transition_index_table(mut reader: BufReader<File>) -> Result<(), Box<dyn Error>> {
+    let buffer = reader.fill_buf()?;
+    println!("First byte is: {:?}", buffer[0]);
+    Ok(())
 }
