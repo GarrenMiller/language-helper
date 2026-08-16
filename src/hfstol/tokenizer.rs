@@ -1,6 +1,22 @@
-use std::io::{BufRead, Seek};
+use std::io::{BufRead, BufReader, Seek};
+use std::fs::File;
 use std::error::Error;
 use crate::hfstol::header::HfstolProperties;
+
+pub struct Tokenizer {
+    alphabet: Vec<Vec<u8>>,
+    special_symbols: Vec<Vec<u8>>,
+}
+
+impl Tokenizer {
+    pub fn new(reader: BufReader<File> , hfstol_properties: HfstolProperties) -> Result<Tokenizer, Box<dyn Error>> {
+        let (alphabet, special_symbols) = parse_symbols(reader, hfstol_properties)?;
+        Ok(Self {
+            alphabet,
+            special_symbols
+        })
+    }
+}
 
 pub fn parse_symbols(mut reader: impl BufRead + Seek, hfstol_properties: HfstolProperties) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), Box<dyn Error>> {
     let mut _count = 0;
