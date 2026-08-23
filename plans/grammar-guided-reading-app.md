@@ -304,11 +304,15 @@ orientation exercise. The modules built here are the *real* modules
 (`slm/trie.rs`, `slm/sampler.rs`); later steps only swap the toy vocab for the
 tokenizer's vocab and the toy grammar for the real schemas.
 
-**0.1 Toy vocabulary** (test fixture, ~15 tokens):
+**0.1 Toy vocabulary** (~15 tokens, in real model vocab format):
 ```
 enum values:  cat, car, dog, door, open, closed
 structural:   {  }  "  :  ,  (space)
 ```
+Stored as `fixtures/toy_vocab.json` — a `vocab.json`-style token->id object,
+identical in shape to the `model.vocab` section of a real model's
+`tokenizer.json`. Load with serde_json, order the token strings by id, and
+convert each to `Vec<u8>` bytes for the trie.
 
 **0.2 `trie.rs` — byte-prefix trie** (generic over any vocab, reused later):
 - `Trie::new(vocab: &[Vec<u8>]) -> Trie` — inserts each token's bytes, records
