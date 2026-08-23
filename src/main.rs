@@ -1,11 +1,3 @@
-mod server;
-mod handlers;
-mod hfstol;
-
-use server::start_server;
-
-#[tokio::main]
-async fn main() {
-    start_server().await;
+fn main() {
     println!("Hello, world!");
 }
