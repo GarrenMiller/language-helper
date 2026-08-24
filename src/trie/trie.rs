@@ -19,59 +19,39 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
-static NEXT_EDGE_ID: AtomicU64 = AtomicU64::new(0);
-
-struct Node {
-    id: u64,
-    parent_id: Option<u64>,
-    outgoing_edge_ids: Vec<u64>,
-    is_terminal: bool,
-}
 
 #[derive(Debug)]
-struct Edge {
+struct Node {
     id: u64,
-    source_id: u64,
-    target_id: u64,
     value: u8,
+    is_terminal: bool,
 }
 
 struct Trie {
     root_id: u64,
     nodes: HashMap<u64, Node>,
-    edges: HashMap<u64, Edge>,
+    children: HashMap<u64, Vec<u64>>
 }
 
 impl Node {
-    pub fn new() -> Self {
+    pub fn new(byte: &u8) -> Self {
         Self {
             id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
-            parent_id: None,
-            outgoing_edge_ids: Vec::new(),
+            value: *byte,
             is_terminal: false,
         }
     }
 }
 
-impl Edge {
-    pub fn new(value: &u8, source: &u64, target: &u64) -> Self {
-        Self {
-            id: NEXT_EDGE_ID.fetch_add(1, Ordering::Relaxed),
-            source_id: *source,
-            target_id: *target,
-            value: *value,
-        }
-    }
-}
 
 impl Trie {
     pub fn new() -> Self {
-        let root = Node::new();
+        let root = Node::new(&b'"');
 
         let mut instance = Self {
             root_id: root.id,
             nodes: HashMap::new(),
-            edges: HashMap::new(),
+            children: HashMap::new(),
         };
 
         instance.nodes.insert(root.id, root);
@@ -80,29 +60,25 @@ impl Trie {
 
     pub fn add_token(&mut self, token: &str) {
         let mut bytes = token.bytes();
-        let first_byte = bytes.next();
-        let mut prev_node = Node::new();
-        prev_node.parent_id = Some(self.root_id);
+        let first_byte = bytes.next().unwrap();
+        let first_node = Node::new(&first_byte);
 
-        let edge = Edge::new(&first_byte.unwrap(), &self.root_id, &prev_node.id); 
-        let mut parent_id = prev_node.id;
-        self.nodes.insert(prev_node.id, prev_node);
-        self.edges.insert(edge.id, edge);
-        self.nodes
-            .get_mut(&self.root_id)
-            .unwrap()
-            .outgoing_edge_ids
-            .push(self.root_id);
-
+        let mut parent_id = first_node.id;
+        self.children
+            .entry(self.root_id)
+            .or_insert_with(Vec::new)
+            .push(first_node.id);
+        self.nodes.insert(first_node.id, first_node);
 
         for byte in bytes {
-            let mut node = Node::new();
-            node.parent_id = Some(parent_id);
+            let next_node = Node::new(&byte);
+            parent_id = next_node.id;
+            self.children
+                .entry(parent_id)
+                .or_insert_with(Vec::new)
+                .push(next_node.id);
+            self.nodes.insert(next_node.id, next_node);
 
-            let edge = Edge::new(&byte, &parent_id, &node.id);
-            self.edges.insert(edge.id, edge);
-
-            parent_id = node.id;
         }
     }
 }
@@ -118,7 +94,8 @@ mod tests {
     fn test_trie_add_token() {
         let mut trie = Trie::new();
         trie.add_token("cat");
-        info!("Edges are: {:?}", trie.edges);
+        info!("Nodes are: {:?}", trie.nodes);
+        info!("Children are: {:?}", trie.children);
         assert_eq!(true, true);
     }
 }
