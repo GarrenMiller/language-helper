@@ -15,37 +15,51 @@
 // 2. Get all tokens that contain a prefix.
 // 3. Add new token in and update paths accordingly.
 //
-use uuid::Uuid;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_EDGE_ID: AtomicU64 = AtomicU64::new(0);
 
 struct Node {
-    id: Uuid,
-    parent_id: Option<Uuid>,
-    outgoing_edges: Vec<Edge>,
+    id: u64,
+    parent_id: Option<u64>,
+    outgoing_edge_ids: Vec<u64>,
     is_terminal: bool,
 }
 
 #[derive(Debug)]
 struct Edge {
+    id: u64,
+    source_id: u64,
+    target_id: u64,
     value: u8,
-    edge_id: Uuid,
-    source_id: Uuid,
-    target_id: Uuid,
 }
 
 struct Trie {
-    root_id: Uuid,
-    nodes: HashMap<Uuid, Node>,
-    edges: HashMap<Uuid, Edge>,
+    root_id: u64,
+    nodes: HashMap<u64, Node>,
+    edges: HashMap<u64, Edge>,
 }
 
 impl Node {
     pub fn new() -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
             parent_id: None,
-            outgoing_edges: Vec::new(),
+            outgoing_edge_ids: Vec::new(),
             is_terminal: false,
+        }
+    }
+}
+
+impl Edge {
+    pub fn new(value: &u8, source: &u64, target: &u64) -> Self {
+        Self {
+            id: NEXT_EDGE_ID.fetch_add(1, Ordering::Relaxed),
+            source_id: *source,
+            target_id: *target,
+            value: *value,
         }
     }
 }
@@ -70,29 +84,23 @@ impl Trie {
         let mut prev_node = Node::new();
         prev_node.parent_id = Some(self.root_id);
 
-        let edge = Edge {
-            value: first_byte.unwrap(),
-            edge_id: Uuid::new_v4(),
-            source_id: self.root_id,
-            target_id: prev_node.id
-        };
-
+        let edge = Edge::new(&first_byte.unwrap(), &self.root_id, &prev_node.id); 
         let mut parent_id = prev_node.id;
         self.nodes.insert(prev_node.id, prev_node);
-        self.edges.insert(edge.edge_id, edge);
+        self.edges.insert(edge.id, edge);
+        self.nodes
+            .get_mut(&self.root_id)
+            .unwrap()
+            .outgoing_edge_ids
+            .push(self.root_id);
 
-        for byte in token.bytes() {
+
+        for byte in bytes {
             let mut node = Node::new();
             node.parent_id = Some(parent_id);
 
-            let edge = Edge {
-                value: byte,
-                edge_id: Uuid::new_v4(),
-                source_id: parent_id,
-                target_id: node.id
-            };
-
-            self.edges.insert(edge.edge_id, edge);
+            let edge = Edge::new(&byte, &parent_id, &node.id);
+            self.edges.insert(edge.id, edge);
 
             parent_id = node.id;
         }
@@ -111,12 +119,6 @@ mod tests {
         let mut trie = Trie::new();
         trie.add_token("cat");
         info!("Edges are: {:?}", trie.edges);
-        assert_eq!(true, true);
-    }
-    
-    #[test]
-    fn test_logging() {
-        info!("Logging works");
         assert_eq!(true, true);
     }
 }
