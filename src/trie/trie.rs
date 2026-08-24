@@ -25,6 +25,7 @@ struct Node {
     is_terminal: bool,
 }
 
+#[derive(Debug)]
 struct Edge {
     value: u8,
     edge_id: Uuid,
@@ -33,7 +34,7 @@ struct Edge {
 }
 
 struct Trie {
-    root: Node,
+    root_id: Uuid,
     nodes: HashMap<Uuid, Node>,
     edges: HashMap<Uuid, Edge>,
 }
@@ -51,45 +52,49 @@ impl Node {
 
 impl Trie {
     pub fn new() -> Self {
-        let root_node = Node::new();
-        let mut nodes = HashMap::new();
+        let root = Node::new();
+
         let mut instance = Self {
-            root: root_node,
-            nodes: nodes,
-            edges: HashMap::new(), 
+            root_id: root.id,
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
         };
-        instance.nodes.insert(instance.root.id, instance.root);
+
+        instance.nodes.insert(root.id, root);
         return instance;
     }
 
     pub fn add_token(&mut self, token: &str) {
-        let bytes = token.bytes();
+        let mut bytes = token.bytes();
         let first_byte = bytes.next();
         let mut prev_node = Node::new();
-        prev_node.parent_id = self.root;
-        self.nodes.insert(prev_node.id, prev_node);
+        prev_node.parent_id = Some(self.root_id);
 
         let edge = Edge {
             value: first_byte.unwrap(),
             edge_id: Uuid::new_v4(),
-            source_id: self.root.id,
+            source_id: self.root_id,
             target_id: prev_node.id
         };
 
+        let mut parent_id = prev_node.id;
+        self.nodes.insert(prev_node.id, prev_node);
         self.edges.insert(edge.edge_id, edge);
 
         for byte in token.bytes() {
             let mut node = Node::new();
-            node.parent_id = Some(prev_node.id);
+            node.parent_id = Some(parent_id);
 
             let edge = Edge {
                 value: byte,
                 edge_id: Uuid::new_v4(),
-                source_id: prev_node.id,
+                source_id: parent_id,
                 target_id: node.id
             };
 
-            prev_node = node;
+            self.edges.insert(edge.edge_id, edge);
+
+            parent_id = node.id;
         }
     }
 }
@@ -97,11 +102,21 @@ impl Trie {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
+    use log::info;
+
  
     #[test]
     fn test_trie_add_token() {
         let mut trie = Trie::new();
         trie.add_token("cat");
+        info!("Edges are: {:?}", trie.edges);
+        assert_eq!(true, true);
+    }
+    
+    #[test]
+    fn test_logging() {
+        info!("Logging works");
         assert_eq!(true, true);
     }
 }
