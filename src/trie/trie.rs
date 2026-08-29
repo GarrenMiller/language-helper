@@ -27,7 +27,7 @@ struct Node {
     is_terminal: bool,
 }
 
-struct Trie {
+pub struct Trie {
     root_id: u64,
     nodes: HashMap<u64, Node>,
     children: HashMap<u64, Vec<u64>>
@@ -78,7 +78,44 @@ impl Trie {
                 .or_insert_with(Vec::new)
                 .push(next_node.id);
             self.nodes.insert(next_node.id, next_node);
+        }
+    }
 
+    pub fn find_longest_prefix_path(&mut self, token: &str) {
+        let mut bytes = token.bytes();
+        let first_byte = bytes.next().unwrap();
+        let first_node = self.children
+            .get(&self.root_id)
+            .expect("Do not try to access root node children before they exist")
+            .iter()
+            .find(|id| self.nodes.get(id).expect("All nodes must have an ID; something is wrong").value == first_byte);
+
+        if first_node.is_none() {
+            println!("TODO: Return empty string to indicate that no prefix is known");
+            return;
+        }
+
+        let mut current_node = first_node.expect("current node has to exist");
+        let mut path = vec![current_node];
+        for byte in bytes {
+            let current_children = self.children.get(current_node);
+            match current_children {
+                None => println!("There are no children"),
+                Some(children) => {
+                    let next_node = children
+                        .iter()
+                        .find(|id| self.nodes.get(id).expect("All nodes must have an ID; something is wrong").value == byte);
+                   
+                    if let Some(value) = next_node {
+                        path.push(value);
+                        current_node = value;
+                        return;
+                    }
+
+                    println!("There are children, but none have the correct value");
+                    return;
+                }
+            }
         }
     }
 }
