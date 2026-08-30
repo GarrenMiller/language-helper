@@ -17,7 +17,6 @@
 //
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use log::info;
 
 static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -113,14 +112,26 @@ impl Trie {
 mod tests {
     use super::*;
     use test_log::test;
-    use log::info;
 
  
     #[test]
-    fn test_trie_add_token() {
+    fn test_trie_no_duplicate_nodes() {
         let mut trie = Trie::new();
         trie.add_token("car");
         trie.add_token("cart");
-        assert_eq!(true, true);
+        trie.add_token("carts");
+        assert_eq!(trie.nodes.len(), 6); // unique bytes + root
+    }
+
+    #[test]
+    fn test_trie_terminal_nodes() {
+        let mut trie = Trie::new();
+        trie.add_token("car");
+        trie.add_token("cart");
+        trie.add_token("carts");
+        let terminal_nodes = trie.nodes.values().filter(|n| n.is_terminal).collect::<Vec<&Node>>();
+        let mut node_values = terminal_nodes.iter().map(|n| n.value).collect::<Vec<u8>>();
+        assert_eq!(terminal_nodes.len(), 3);
+        assert_eq!(node_values.sort(), vec![ b'r', b't', b's'].sort());
     }
 }
