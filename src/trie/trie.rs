@@ -85,6 +85,12 @@ impl Trie {
         }
     }
 
+    pub fn add_tokens(&mut self, tokens: &[&str]) {
+        for token in tokens {
+            self.add_token(token.as_bytes());
+        }
+    }
+
     fn find_known_prefix(&self, token: &[u8]) -> Option<Vec<&u64>> {
         let mut current_node = &self.root_id; 
         let mut path = vec![];
@@ -192,13 +198,35 @@ mod tests {
     use super::*;
     use test_log::test;
 
+    fn distinct_prefixes(tokens: &[&str]) -> usize {
+        let mut prefixes: Vec<&str> = Vec::new();
+
+        for token in tokens {
+            for (idx, _) in token .char_indices() {
+                let prefix = &token[0..idx + 1];
+                if !prefixes.contains(&prefix) {
+                    info!("Adding prefix: {:?}", prefix);
+                    prefixes.push(prefix)
+                }; 
+            }
+        }
+        prefixes.len()
+    }
+
     #[test]
-    fn test_trie_no_duplicate_nodes() {
+    fn test_distinct_prefixes() {
+        let input = ["creative", "creature"];
+        let output = distinct_prefixes(&input);
+        assert_eq!(output, 11);
+    }
+
+    #[test]
+    fn test_no_duplicate_nodes() {
         let mut trie = Trie::new();
-        trie.add_token(b"car");
-        trie.add_token(b"cart");
-        trie.add_token(b"carts");
-        assert_eq!(trie.nodes.len(), 6); // unique bytes + root
+        let input = ["car", "cart", "carts"];
+        let num_distinct_prefixes = distinct_prefixes(&input);
+        trie.add_tokens(&input);
+        assert_eq!(trie.nodes.len(), 1 + num_distinct_prefixes); // unique bytes + root
     }
 
     #[test]
