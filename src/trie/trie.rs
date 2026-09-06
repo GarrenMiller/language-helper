@@ -38,11 +38,11 @@ pub struct Trie {
 }
 
 impl Node {
-    pub fn new(byte: &u8) -> Self {
+    pub fn new(byte: &u8, is_terminal: bool) -> Self {
         Self {
             id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
             value: *byte,
-            is_terminal: false,
+            is_terminal: is_terminal,
         }
     }
 }
@@ -50,7 +50,7 @@ impl Node {
 
 impl Trie {
     pub fn new() -> Self {
-        let root = Node::new(&b'"');
+        let root = Node::new(&b'"', false);
 
         let mut instance = Self {
             root_id: root.id,
@@ -62,26 +62,41 @@ impl Trie {
         return instance;
     }
 
-    pub fn add_token(&mut self, token: &[u8]) {
-        let known_prefix = self.bytes_to_path(token);
-
-        let (bytes, mut node_index) = match known_prefix {
-            Some(prefix) => (&token[prefix.len()..], *prefix[prefix.len() - 1]),
-            None => (token, self.root_id) 
+    pub fn path_token_difference(&self, path: Option<Vec<u64>>, token: &[u8]) -> Vec<u8> {
+        let bytes = match path {
+            Some(path) => &token[path.len()..],
+            None => token,
         };
+        return bytes.to_vec();
+    }
+    
+    pub fn traverse_path(&self, path: &Vec<u64>) -> Vec<u8> {
+        path.iter().map(|idx| self.nodes.get(idx).unwrap().value).collect::<Vec<u8>>()
+    }
 
-        let mut iter = bytes.iter().peekable();
+    pub fn add_node(&mut self, byte: u8, is_terminal: bool) -> &Node {
+        let next_node = Node::new(&byte, is_terminal);
+        self.nodes.entry(next_node.id).or_insert(next_node)
+    }
+
+    pub fn add_child(&mut self, parent_id: u64, child_id: u64) {
+        self.children.entry(parent_id).or_insert_with(Vec::new).push(child_id);
+    }
+
+    pub fn add_token(&mut self, token: &[u8]) {
+        let known_path = self.bytes_to_path(token);
+        let mut parent_id = known_path.as_ref().and_then(|v| v.last().copied());
+        let new_bytes = self.path_token_difference(known_path, token);
+        let mut iter = new_bytes.iter().peekable();
+
         while let Some(byte) = iter.next() {
-            let mut next_node = Node::new(&byte);
-            if iter.peek().is_none() {
-                next_node.is_terminal = true;    
-            }
-            self.children
-                .entry(node_index)
-                .or_insert_with(Vec::new)
-                .push(next_node.id);
-            node_index = next_node.id;
-            self.nodes.insert(next_node.id, next_node);
+            let is_terminal = iter.peek().is_none();
+            let node_id = self.add_node(*byte, is_terminal).id;
+            match parent_id {
+                Some(parent_id) => self.add_child(parent_id, node_id),
+                None => (),
+            };
+            parent_id = Some(node_id);
         }
     }
 
@@ -91,7 +106,7 @@ impl Trie {
         }
     }
 
-    fn bytes_to_path(&self, token: &[u8]) -> Option<Vec<&u64>> {
+    fn bytes_to_path(&self, token: &[u8]) -> Option<Vec<u64>> {
         let mut current_node = &self.root_id; 
         let mut path = vec![];
 
@@ -105,7 +120,7 @@ impl Trie {
                         .find(|id| &self.nodes.get(id).expect("All nodes must have an ID; something is wrong").value == byte);
                    
                     if let Some(value) = next_node {
-                        path.push(value);
+                        path.push(*value);
                         current_node = value;
                         continue;
                     }
@@ -115,16 +130,19 @@ impl Trie {
         Some(path)
     }
 
-    pub fn valid_next_nodes(&self, path: &Vec<&u64>) -> Option<&Vec<u64>> {
+    pub fn valid_next_nodes(&self, path: Vec<u64>) -> Option<&Vec<u64>> {
         if path.len() == 0 {
            return None; 
         }
-        if !self.children.get(&self.root_id).unwrap().contains(path[0]) {
+        if !self.children.get(&self.root_id).unwrap().contains(&path[0]) {
             info!("Unrooted paths are not supported");
             return None;
         }
-
-        self.children.get(path[path.len() - 1])
+        info!("path is: {:?}", path);
+        let result = self.children.get(&path[&path.len() - 1]);
+        info!("Children are: {:?}", self.children);
+        info!("result is :{:?}", result);
+        result
     }
 
     pub fn valid_next_bytes(&self, prefix: &[u8]) -> Option<Vec<&u8>> {
@@ -142,7 +160,7 @@ impl Trie {
             Some(path) => {
                 let last_index = path.len().checked_sub(1);
                 if let Some(last_index) = last_index {
-                    return Some(self.children.get(path[last_index])?.iter().map(|child_id| &self.nodes.get(child_id).unwrap().value).collect::<Vec<&u8>>())
+                    return Some(self.children.get(&path[last_index])?.iter().map(|child_id| &self.nodes.get(child_id).unwrap().value).collect::<Vec<&u8>>())
                 }
                 return None;
             },
@@ -159,21 +177,22 @@ impl Trie {
 
                 while let Some(path) = temp_token_paths.pop() {
                     let last = path[path.len() - 1];
-                    if self.nodes.get(last)?.is_terminal {
+                    if self.nodes.get(&last)?.is_terminal {
                         final_token_paths.push(path);
                         continue;
                     }
 
-                    let Some(next_nodes) = self.valid_next_nodes(&path) else { info!("No valid next nodes"); return None };
+                    let Some(next_nodes) = self.valid_next_nodes(path.clone()) else { info!("No valid next nodes"); return None };
                     for node in next_nodes {
                         let mut path_copy = path.clone();
-                        path_copy.push(node);
+                        path_copy.push(*node);
                         temp_token_paths.push(path_copy);
                     }
                 }
                 let mut tokens = Vec::new();
                 for path in final_token_paths {
                     let token = path.iter().map(|index| self.nodes.get(index).unwrap().value).collect::<Vec<u8>>(); 
+                    info!("Pushing token: {:?}", str::from_utf8(&token));
                     tokens.push(token);
                 }
                 Some(tokens)
@@ -182,9 +201,6 @@ impl Trie {
         }
     }
 
-    pub fn traverse_path(&self, path: &Vec<&u64>) -> Vec<u8> {
-        path.iter().map(|idx| self.nodes.get(idx).unwrap().value).collect::<Vec<u8>>()
-    }
 }
 
 #[cfg(test)]
@@ -248,15 +264,11 @@ mod tests {
     #[test]
     fn test_valid_next_nodes() {
         let mut trie = Trie::new();
-        let token = "input".as_bytes();
-        trie.add_token(token);
-        let mut path = trie.bytes_to_path("inp".as_bytes()).unwrap();
-        let first = trie.valid_next_nodes(&path);
-        path.remove(0);
-        let second = trie.valid_next_nodes(&path);
+        trie.add_tokens(&["bat", "board", "body", "bottom"]);
+        let path = trie.bytes_to_path("bo".as_bytes()).unwrap();
+        let next_nodes = trie.valid_next_nodes(path).unwrap();
 
-        assert_eq!(first.is_some(), true);
-        assert_eq!(second.is_none(), true);
+        assert_eq!(next_nodes.len(), 3);
     }
 
     #[test]
@@ -277,6 +289,6 @@ mod tests {
         trie.add_token(b"bottom");
         let tokens = trie.find_tokens_with_prefix(b"bo");
         assert_eq!(tokens.is_none(), false);
-        // assert_eq!(tokens.unwrap(), vec![b"board".to_vec(), b"body".to_vec(), b"bottom".to_vec()]);
+        assert_eq!(tokens.unwrap(), vec![b"board".to_vec(), b"body".to_vec(), b"bottom".to_vec()]);
     }
 }
