@@ -63,7 +63,7 @@ impl Trie {
     }
 
     pub fn add_token(&mut self, token: &[u8]) {
-        let known_prefix = self.find_known_prefix(token);
+        let known_prefix = self.bytes_to_path(token);
 
         let (bytes, mut node_index) = match known_prefix {
             Some(prefix) => (&token[prefix.len()..], *prefix[prefix.len() - 1]),
@@ -91,7 +91,7 @@ impl Trie {
         }
     }
 
-    fn find_known_prefix(&self, token: &[u8]) -> Option<Vec<&u64>> {
+    fn bytes_to_path(&self, token: &[u8]) -> Option<Vec<&u64>> {
         let mut current_node = &self.root_id; 
         let mut path = vec![];
 
@@ -137,7 +137,7 @@ impl Trie {
             return None;
         }
 
-        let path = self.find_known_prefix(prefix);
+        let path = self.bytes_to_path(prefix);
         match path {
             Some(path) => {
                 let last_index = path.len().checked_sub(1);
@@ -151,45 +151,39 @@ impl Trie {
     }
 
     pub fn find_tokens_with_prefix(&self, prefix: &[u8]) -> Option<Vec<Vec<u8>>> {
-        info!("nodes are: {:?}", self.nodes);
-        info!("children are: {:?}", self.children);
-        let path = self.find_known_prefix(prefix);
+        let path = self.bytes_to_path(prefix);
         match path {
             Some(root_path) => {
-                info!("Root path is: {:?}", root_path);
                 let mut temp_token_paths = vec![root_path];
                 let mut final_token_paths = Vec::new();
 
                 while let Some(path) = temp_token_paths.pop() {
                     let last = path[path.len() - 1];
-                    info!("Checkpoint");
-                    info!("Partial token path: {:?}", path);
                     if self.nodes.get(last)?.is_terminal {
                         final_token_paths.push(path);
                         continue;
                     }
 
                     let Some(next_nodes) = self.valid_next_nodes(&path) else { info!("No valid next nodes"); return None };
-                    info!("next nodes: {:?}", next_nodes);
                     for node in next_nodes {
                         let mut path_copy = path.clone();
                         path_copy.push(node);
-                        info!("pushing new path to temp_tokens: {:?}", path_copy);
                         temp_token_paths.push(path_copy);
                     }
                 }
                 let mut tokens = Vec::new();
                 for path in final_token_paths {
                     let token = path.iter().map(|index| self.nodes.get(index).unwrap().value).collect::<Vec<u8>>(); 
-                    info!("token: {:?}", String::from_utf8(token.clone()));
                     tokens.push(token);
                 }
                 Some(tokens)
             },
             None => None
         }
+    }
 
-
+    pub fn traverse_path(&self, path: &Vec<&u64>) -> Vec<u8> {
+        path.iter().map(|idx| self.nodes.get(idx).unwrap().value).collect::<Vec<u8>>()
     }
 }
 
@@ -205,7 +199,6 @@ mod tests {
             for (idx, _) in token .char_indices() {
                 let prefix = &token[0..idx + 1];
                 if !prefixes.contains(&prefix) {
-                    info!("Adding prefix: {:?}", prefix);
                     prefixes.push(prefix)
                 }; 
             }
@@ -226,19 +219,44 @@ mod tests {
         let input = ["car", "cart", "carts"];
         let num_distinct_prefixes = distinct_prefixes(&input);
         trie.add_tokens(&input);
-        assert_eq!(trie.nodes.len(), 1 + num_distinct_prefixes); // unique bytes + root
+
+        assert_eq!(trie.nodes.len(), 1 + num_distinct_prefixes); // All nodes are unique 
     }
 
     #[test]
-    fn test_trie_terminal_nodes() {
+    fn test_terminal_nodes_exist_and_can_have_children() {
         let mut trie = Trie::new();
-        trie.add_token(b"car");
-        trie.add_token(b"cart");
-        trie.add_token(b"carts");
+        trie.add_tokens(&["car", "cart", "carts"]);
         let terminal_nodes = trie.nodes.values().filter(|n| n.is_terminal).collect::<Vec<&Node>>();
+        let terminal_nodes_with_children = terminal_nodes.iter().filter(|n| trie.children.get(&n.id).is_some()).collect::<Vec<&&Node>>();
         let mut node_values = terminal_nodes.iter().map(|n| n.value).collect::<Vec<u8>>();
-        assert_eq!(terminal_nodes.len(), 3);
-        assert_eq!(node_values.sort(), vec![ b'r', b't', b's'].sort());
+
+        assert_eq!(terminal_nodes_with_children.len(), 2); 
+        assert_eq!(terminal_nodes.len(), 3); 
+        assert_eq!(node_values.sort(), vec![ b'r', b't', b's'].sort()); 
+    }
+
+    #[test]
+    fn test_bytes_to_path() {
+       let mut trie = Trie::new();
+       trie.add_token(b"cart");
+       let path = trie.bytes_to_path("carts".as_bytes()).unwrap();
+       let prefix = trie.traverse_path(&path);
+       assert_eq!(prefix.as_slice(), b"cart");
+    }
+
+    #[test]
+    fn test_valid_next_nodes() {
+        let mut trie = Trie::new();
+        let token = "input".as_bytes();
+        trie.add_token(token);
+        let mut path = trie.bytes_to_path("inp".as_bytes()).unwrap();
+        let first = trie.valid_next_nodes(&path);
+        path.remove(0);
+        let second = trie.valid_next_nodes(&path);
+
+        assert_eq!(first.is_some(), true);
+        assert_eq!(second.is_none(), true);
     }
 
     #[test]
