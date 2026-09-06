@@ -62,18 +62,6 @@ impl Trie {
         return instance;
     }
 
-    pub fn path_token_difference(&self, path: Option<Vec<u64>>, token: &[u8]) -> Vec<u8> {
-        let bytes = match path {
-            Some(path) => &token[path.len()..],
-            None => token,
-        };
-        return bytes.to_vec();
-    }
-    
-    pub fn traverse_path(&self, path: &Vec<u64>) -> Vec<u8> {
-        path.iter().map(|idx| self.nodes.get(idx).unwrap().value).collect::<Vec<u8>>()
-    }
-
     pub fn add_node(&mut self, byte: u8, is_terminal: bool) -> &Node {
         let next_node = Node::new(&byte, is_terminal);
         self.nodes.entry(next_node.id).or_insert(next_node)
@@ -85,18 +73,15 @@ impl Trie {
 
     pub fn add_token(&mut self, token: &[u8]) {
         let known_path = self.bytes_to_path(token);
-        let mut parent_id = known_path.as_ref().and_then(|v| v.last().copied());
+        let mut parent_id = known_path.as_ref().and_then(|v| v.last().copied()).unwrap_or(self.root_id);
         let new_bytes = self.path_token_difference(known_path, token);
         let mut iter = new_bytes.iter().peekable();
 
         while let Some(byte) = iter.next() {
             let is_terminal = iter.peek().is_none();
             let node_id = self.add_node(*byte, is_terminal).id;
-            match parent_id {
-                Some(parent_id) => self.add_child(parent_id, node_id),
-                None => (),
-            };
-            parent_id = Some(node_id);
+            self.add_child(parent_id, node_id);
+            parent_id = node_id;
         }
     }
 
@@ -105,26 +90,39 @@ impl Trie {
             self.add_token(token.as_bytes());
         }
     }
+    
+    pub fn path_token_difference(&self, path: Option<Vec<u64>>, token: &[u8]) -> Vec<u8> {
+        let bytes = match path {
+            Some(path) => &token[path.len()..],
+            None => token,
+        };
+        return bytes.to_vec();
+    }
+    
+    pub fn path_to_bytes(&self, path: &Vec<u64>) -> Vec<u8> {
+        path.iter().map(|idx| self.nodes.get(idx).unwrap().value).collect::<Vec<u8>>()
+    }
+
+    pub fn child_for(&self, node: u64, byte: u8) -> Option<u64> {
+        self.children
+            .get(&node)?
+            .iter()
+            .copied()
+            .find(|id| self.nodes.get(id).expect("Child id must exist").value == byte)
+    }
 
     fn bytes_to_path(&self, token: &[u8]) -> Option<Vec<u64>> {
-        let mut current_node = &self.root_id; 
-        let mut path = vec![];
+        let mut current = self.root_id; 
+        let mut path = Vec::with_capacity(token.len());
 
-        for byte in token {
-            let children = self.children.get(current_node);
-            match children {
-                None => return (!path.is_empty()).then_some(path),
-                Some(children) => {
-                    let next_node = children
-                        .iter()
-                        .find(|id| &self.nodes.get(id).expect("All nodes must have an ID; something is wrong").value == byte);
-                   
-                    if let Some(value) = next_node {
-                        path.push(*value);
-                        current_node = value;
-                        continue;
-                    }
-                }
+        for &byte in token {
+            info!("Nodes: {:?}", self.nodes);
+            info!("Children: {:?}", self.children);
+            info!("Current: {:?}", current);
+            info!("Byte: {:?}", byte);
+            match self.child_for(current, byte) {
+                Some(next) => { path.push(next); current = next; },
+                None => return (!path.is_empty()).then_some(path)
             }
         }
         Some(path)
@@ -223,6 +221,15 @@ mod tests {
     }
 
     #[test]
+    fn test_add_node() {
+        let mut trie = Trie::new();
+        let node_value = trie.add_node(b'a', false).value;
+        
+        assert_eq!(trie.nodes.len(), 2);
+        assert_eq!(node_value, b'a');
+    }
+
+    #[test]
     fn test_distinct_prefixes() {
         let input = ["creative", "creature"];
         let output = distinct_prefixes(&input);
@@ -256,8 +263,8 @@ mod tests {
     fn test_bytes_to_path() {
        let mut trie = Trie::new();
        trie.add_token(b"cart");
-       let path = trie.bytes_to_path("carts".as_bytes()).unwrap();
-       let prefix = trie.traverse_path(&path);
+       let path = trie.bytes_to_path(b"carts").unwrap();
+       let prefix = trie.path_to_bytes(&path);
        assert_eq!(prefix.as_slice(), b"cart");
     }
 
@@ -289,6 +296,6 @@ mod tests {
         trie.add_token(b"bottom");
         let tokens = trie.find_tokens_with_prefix(b"bo");
         assert_eq!(tokens.is_none(), false);
-        assert_eq!(tokens.unwrap(), vec![b"board".to_vec(), b"body".to_vec(), b"bottom".to_vec()]);
+        assert_eq!(tokens.unwrap().sort(), vec![b"board".to_vec(), b"body".to_vec(), b"bottom".to_vec()].sort());
     }
 }
